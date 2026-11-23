@@ -1,0 +1,201 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'photoURL', 'department', 'roleCategory', 'position', 'yearsInRole', 'jobDescription', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'department', 'roleCategory', 'position', 'yearsInRole', 'jobDescription', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.photoURL is string && data.photoURL.size() <= 500
+        && data.department is string && data.department.size() >= 1 && data.department.size() <= 100
+        && data.roleCategory in ['Teacher', 'Librarian', 'School Leader', 'Office', 'Support Staff']
+        && data.position is string && data.position.size() >= 1 && data.position.size() <= 100
+        && data.yearsInRole is int && data.yearsInRole >= 0 && data.yearsInRole <= 50
+        && data.jobDescription is string && data.jobDescription.size() >= 1 && data.jobDescription.size() <= 500
+        && data.updatedAt == request.time;
+    }
+
+    function isValidSession(data) {
+      return data.keys().hasAll(['sessionId', 'userId', 'status', 'answerCount', 'rebuildCount', 'profileSnapshot', 'board', 'createdAt', 'completedAt'])
+        && data.keys().hasOnly(['sessionId', 'userId', 'status', 'answerCount', 'rebuildCount', 'profileSnapshot', 'board', 'createdAt', 'completedAt'])
+        && isValidId(data.sessionId)
+        && isValidId(data.userId)
+        && data.status in ['open', 'completed']
+        && data.answerCount is int && data.answerCount >= 0 && data.answerCount <= 20
+        && data.rebuildCount is int && data.rebuildCount >= 0 && data.rebuildCount <= 2
+        && data.profileSnapshot is map
+        && data.profileSnapshot.keys().hasAll(['displayName', 'department', 'roleCategory', 'position', 'yearsInRole', 'jobDescription'])
+        && data.profileSnapshot.keys().hasOnly(['displayName', 'department', 'roleCategory', 'position', 'yearsInRole', 'jobDescription'])
+        && data.profileSnapshot.displayName is string && data.profileSnapshot.displayName.size() <= 120
+        && data.profileSnapshot.department is string && data.profileSnapshot.department.size() <= 100
+        && data.profileSnapshot.roleCategory in ['Teacher', 'Librarian', 'School Leader', 'Office', 'Support Staff']
+        && data.profileSnapshot.position is string && data.profileSnapshot.position.size() <= 100
+        && data.profileSnapshot.yearsInRole is int && data.profileSnapshot.yearsInRole >= 0 && data.profileSnapshot.yearsInRole <= 50
+        && data.profileSnapshot.jobDescription is string && data.profileSnapshot.jobDescription.size() <= 500
+        && (data.board == null || data.board is map)
+        && data.createdAt is timestamp
+        && (data.completedAt == null || data.completedAt is timestamp);
+    }
+
+    function isValidInteraction(data) {
+      return data.keys().hasAll(['sessionId', 'userId', 'clientMessageId', 'role', 'content', 'topicNumber', 'timestamp', 'modelUsed'])
+        && data.keys().hasOnly(['sessionId', 'userId', 'clientMessageId', 'role', 'content', 'topicNumber', 'timestamp', 'modelUsed'])
+        && isValidId(data.sessionId)
+        && isValidId(data.userId)
+        && data.clientMessageId is string && data.clientMessageId.size() >= 1 && data.clientMessageId.size() <= 128
+        && data.role in ['user', 'assistant']
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 4000
+        && data.topicNumber is int && data.topicNumber >= 1 && data.topicNumber <= 6
+        && data.timestamp == request.time
+        && data.modelUsed is string && data.modelUsed.size() <= 100;
+    }
+
+    function isValidCompanyBasis(data) {
+      return data.keys().hasAll(['documents', 'updatedAt'])
+        && data.keys().hasOnly(['documents', 'updatedAt'])
+        && data.documents is list
+        && data.documents.size() <= 100
+        && (data.documents.size() == 0 || (data.documents[0] is map && data.documents[0].keys().hasAll(['id', 'title', 'text', 'sizeChars', 'uploadedAt'])))
+        && data.updatedAt == request.time;
+    }
+
+    function isValidWallReport(data) {
+      return data.keys().hasAll(['id', 'title', 'markdown', 'stats', 'modelUsed', 'createdAt', 'createdBy'])
+        && data.keys().hasOnly(['id', 'title', 'markdown', 'stats', 'modelUsed', 'createdAt', 'createdBy'])
+        && isValidId(data.id)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.markdown is string && data.markdown.size() >= 1 && data.markdown.size() <= 200000
+        && data.stats is map
+        && data.modelUsed is string && data.modelUsed.size() <= 100
+        && data.createdAt == request.time
+        && data.createdBy == request.auth.uid;
+    }
+
+    // User profile: owner reads/writes; admin reads only
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isVerified() && isValidId(userId)
+        && isValidProfile(incoming())
+        && incoming().uid == userId;
+      allow update: if isOwner(userId) && isVerified() && isValidId(userId)
+        && isValidProfile(incoming())
+        && incoming().uid == existing().uid;
+      allow delete: if false;
+
+      // User check-in sessions
+      match /circleSessions/{sessionId} {
+        allow get: if isValidId(userId) && isValidId(sessionId) && (isOwner(userId) || isAdmin());
+        allow list: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isVerified() && isValidId(userId) && isValidId(sessionId)
+          && isValidSession(incoming())
+          && incoming().sessionId == sessionId
+          && incoming().userId == userId
+          && incoming().status == 'open'
+          && incoming().answerCount == 0
+          && incoming().rebuildCount == 0
+          && incoming().board == null
+          && incoming().createdAt == request.time
+          && incoming().completedAt == null;
+        allow update: if isOwner(userId) && isVerified() && isValidId(userId) && isValidId(sessionId)
+          && isValidSession(incoming())
+          && existing().status == 'open'
+          && incoming().sessionId == existing().sessionId
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && (
+            (
+              incoming().status == 'open'
+              && incoming().board == null
+              && incoming().completedAt == null
+              && incoming().diff(existing()).affectedKeys().hasOnly(['answerCount', 'rebuildCount'])
+            )
+            ||
+            (
+              incoming().status == 'completed'
+              && incoming().board is map
+              && incoming().completedAt == request.time
+              && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'board', 'completedAt', 'rebuildCount'])
+            )
+          );
+        allow delete: if false;
+      }
+
+      // Immutable chat messages
+      match /interactions/{interactionId} {
+        allow get: if isValidId(userId) && isValidId(interactionId) && (isOwner(userId) || isAdmin());
+        allow list: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isVerified() && isValidId(userId) && isValidId(interactionId)
+          && isValidInteraction(incoming())
+          && incoming().userId == userId
+          && exists(/databases/$(database)/documents/users/$(userId)/circleSessions/$(incoming().sessionId));
+        allow update, delete: if false;
+      }
+    }
+
+    // Collection-group read access: admin only
+    match /{path=**}/circleSessions/{sessionId} {
+      allow list, get: if isAdmin();
+    }
+
+    match /{path=**}/interactions/{interactionId} {
+      allow list, get: if isAdmin();
+    }
+
+    // Baseline quality documents: signed-in read, admin write
+    match /settings/companyBasis {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create, update: if isAdmin() && isVerified() && isValidCompanyBasis(incoming());
+      allow delete: if false;
+    }
+
+    // School-wide reports: admin only
+    match /wallReports/{reportId} {
+      allow get: if isAdmin() && isValidId(reportId);
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isVerified() && isValidId(reportId) && isValidWallReport(incoming());
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(reportId);
+    }
+
+    // Superadmin marker: user may only get their own /admins/{uid}; never written by app
+    match /admins/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+  }
+}

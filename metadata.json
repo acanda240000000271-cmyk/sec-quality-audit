@@ -1,0 +1,6 @@
+{
+  "name": "SEC Quality Audit",
+  "description": "Total Quality Management quality circle check-ins and Affinity Boards for Surigao Education Center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

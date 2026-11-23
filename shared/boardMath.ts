@@ -1,0 +1,411 @@
+import {
+  AffinityBoard,
+  BoardNote,
+  BoardStats,
+  BoardTheme,
+  CircleSession,
+  COMPLAINT_SOURCES,
+  type ComplaintSource,
+  HeatLevel,
+  NON_STEP_NOTE_TYPES,
+  NoteType,
+  RoleCategory,
+} from './types.js';
+
+export function computeHeat(painNotes: number): HeatLevel {
+  if (painNotes >= 3) return 'Hot';
+  if (painNotes === 2) return 'Warm';
+  return 'Mild';
+}
+
+export function recomputeBoardMetrics(
+  board: Omit<AffinityBoard, 'stats'> & { stats?: BoardStats }
+): AffinityBoard {
+  const notes: BoardNote[] = Array.isArray(board.notes) ? board.notes : [];
+  const rawThemes = Array.isArray(board.themes) ? board.themes : [];
+
+  const byType: Record<NoteType, number> = {
+    Step: 0,
+    Difficulty: 0,
+    Complaint: 0,
+    Strength: 0,
+    Suggestion: 0,
+  };
+
+  const complaintSources: Record<(typeof COMPLAINT_SOURCES)[number], number> = {
+    Learners: 0,
+    Parents: 0,
+    Colleagues: 0,
+    Office: 0,
+    Self: 0,
+    Other: 0,
+  };
+
+  for (const note of notes) {
+    if (note.type in byType) {
+      byType[note.type] += 1;
+    }
+    if (note.type === 'Complaint') {
+      const src = COMPLAINT_SOURCES.includes(note.source as (typeof COMPLAINT_SOURCES)[number])
+        ? (note.source as (typeof COMPLAINT_SOURCES)[number])
+        : 'Other';
+      complaintSources[src] += 1;
+    }
+  }
+
+  const themes: BoardTheme[] = rawThemes.map((t) => {
+    let difficulties = 0;
+    let complaints = 0;
+    let strengths = 0;
+    let suggestions = 0;
+    const validIndexes = (t.noteIndexes || []).filter(
+      (idx) => Number.isInteger(idx) && idx >= 0 && idx < notes.length && notes[idx].type !== 'Step'
+    );
+
+    for (const idx of validIndexes) {
+      const n = notes[idx];
+      if (n.type === 'Difficulty') difficulties += 1;
+      else if (n.type === 'Complaint') complaints += 1;
+      else if (n.type === 'Strength') strengths += 1;
+      else if (n.type === 'Suggestion') suggestions += 1;
+    }
+
+    const painNotes = difficulties + complaints;
+    return {
+      title: t.title,
+      noteIndexes: validIndexes,
+      cause: t.cause || '',
+      code: t.code || 'None',
+      difficulties,
+      complaints,
+      strengths,
+      suggestions,
+      painNotes,
+      heat: computeHeat(painNotes),
+    };
+  });
+
+  let priorityThemeIndex = board.priority?.themeIndex ?? null;
+  if (
+    priorityThemeIndex !== null &&
+    (!Number.isInteger(priorityThemeIndex) ||
+      priorityThemeIndex < 0 ||
+      priorityThemeIndex >= themes.length)
+  ) {
+    priorityThemeIndex = null;
+  }
+
+  const totalNonStepNotes =
+    byType.Difficulty + byType.Complaint + byType.Strength + byType.Suggestion;
+  const painPoints = byType.Difficulty + byType.Complaint;
+  const improvements = Array.isArray(board.improvements) ? board.improvements : [];
+
+  return {
+    routine: board.routine || '',
+    routineCode: board.routineCode || 'None',
+    summary: board.summary || '',
+    notes,
+    themes,
+    priority: {
+      themeIndex: priorityThemeIndex,
+      reason: board.priority?.reason || '',
+      signOfSuccess: board.priority?.signOfSuccess || '',
+    },
+    improvements,
+    stats: {
+      byType,
+      totalNotes: notes.length,
+      totalNonStepNotes,
+      painPoints,
+      improvementIdeas: improvements.length,
+      complaintSources,
+    },
+    ...(board.modelUsed ? { modelUsed: board.modelUsed } : {}),
+  };
+}
+
+export function removeNoteFromBoard(
+  board: AffinityBoard,
+  noteIndexToRemove: number
+): AffinityBoard {
+  if (noteIndexToRemove < 0 || noteIndexToRemove >= board.notes.length) {
+    return board;
+  }
+  const nextNotes = board.notes.filter((_, idx) => idx !== noteIndexToRemove);
+  const nextThemes = board.themes.map((theme) => ({
+    ...theme,
+    noteIndexes: theme.noteIndexes
+      .filter((idx) => idx !== noteIndexToRemove)
+      .map((idx) => (idx > noteIndexToRemove ? idx - 1 : idx)),
+  }));
+
+  return recomputeBoardMetrics({
+    ...board,
+    notes: nextNotes,
+    themes: nextThemes,
+  });
+}
+
+export interface WallThemeRow {
+  id: string;
+  sessionId: string;
+  userId: string;
+  title: string;
+  heat: HeatLevel;
+  difficulties: number;
+  complaints: number;
+  strengths: number;
+  suggestions: number;
+  painNotes: number;
+  code: string;
+  roleCategory: RoleCategory;
+  isPriority: boolean;
+  date: string;
+  cause: string;
+  routine: string;
+}
+
+export interface WallStandardRow {
+  code: string;
+  boards: number;
+  difficulties: number;
+  complaints: number;
+  strengths: number;
+  suggestions: number;
+}
+
+export interface WallStickyNote {
+  sessionId: string;
+  noteIndex: number;
+  type: Exclude<NoteType, 'Step'>;
+  text: string;
+  quote: string;
+  source: ComplaintSource;
+  code: string;
+  roleCategory: RoleCategory;
+}
+
+export interface WallBoardRow {
+  sessionId: string;
+  userId: string;
+  displayName: string;
+  roleCategory: RoleCategory;
+  position: string;
+  routine: string;
+  date: string;
+  noteCount: number;
+  topTheme: string;
+  topThemeHeat: HeatLevel;
+}
+
+export interface NotesByTypeStat {
+  type: Exclude<NoteType, 'Step'>;
+  count: number;
+  percent: number;
+}
+
+export interface CircleWallMetrics {
+  staffInterviewed: number;
+  boardsSaved: number;
+  notesCollected: number;
+  painPoints: number;
+  improvementIdeas: number;
+  notesByType: NotesByTypeStat[];
+  totalNonStepNotes: number;
+  themes: WallThemeRow[];
+  byStandard: WallStandardRow[];
+  complaintSources: Record<(typeof COMPLAINT_SOURCES)[number], number>;
+  stickyNotes: WallStickyNote[];
+  boards: WallBoardRow[];
+}
+
+export function computeCircleWallMetrics(sessions: CircleSession[]): CircleWallMetrics {
+  const completed = sessions.filter((s) => s.status === 'completed' && s.board !== null);
+
+  const distinctUsers = new Set<string>();
+  let notesCollected = 0;
+  let painPoints = 0;
+  let improvementIdeas = 0;
+
+  const nonStepCounts: Record<Exclude<NoteType, 'Step'>, number> = {
+    Difficulty: 0,
+    Complaint: 0,
+    Strength: 0,
+    Suggestion: 0,
+  };
+
+  const complaintSources: Record<(typeof COMPLAINT_SOURCES)[number], number> = {
+    Learners: 0,
+    Parents: 0,
+    Colleagues: 0,
+    Office: 0,
+    Self: 0,
+    Other: 0,
+  };
+
+  const themes: WallThemeRow[] = [];
+  const stickyNotes: WallStickyNote[] = [];
+  const boards: WallBoardRow[] = [];
+
+  const standardMap = new Map<
+    string,
+    {
+      boardIds: Set<string>;
+      difficulties: number;
+      complaints: number;
+      strengths: number;
+      suggestions: number;
+    }
+  >();
+
+  const ensureStd = (code: string) => {
+    if (!standardMap.has(code)) {
+      standardMap.set(code, {
+        boardIds: new Set<string>(),
+        difficulties: 0,
+        complaints: 0,
+        strengths: 0,
+        suggestions: 0,
+      });
+    }
+    return standardMap.get(code)!;
+  };
+
+  for (const session of completed) {
+    const board = recomputeBoardMetrics(session.board!);
+    distinctUsers.add(session.userId);
+    const dateStr = session.completedAt || session.createdAt || '';
+    const roleCategory = session.profileSnapshot.roleCategory;
+
+    notesCollected += board.notes.length;
+    painPoints += board.stats.painPoints;
+    improvementIdeas += board.improvements.length;
+
+    for (const t of NON_STEP_NOTE_TYPES) {
+      nonStepCounts[t] += board.stats.byType[t];
+    }
+
+    for (const src of COMPLAINT_SOURCES) {
+      complaintSources[src] += board.stats.complaintSources[src] || 0;
+    }
+
+    board.notes.forEach((note, idx) => {
+      if (note.type !== 'Step') {
+        stickyNotes.push({
+          sessionId: session.sessionId,
+          noteIndex: idx,
+          type: note.type,
+          text: note.text,
+          quote: note.quote,
+          source: note.source || '',
+          code: note.code || 'None',
+          roleCategory,
+        });
+      }
+      if (note.code && note.code !== 'None') {
+        const st = ensureStd(note.code);
+        st.boardIds.add(session.sessionId);
+        if (note.type === 'Difficulty') st.difficulties += 1;
+        else if (note.type === 'Complaint') st.complaints += 1;
+        else if (note.type === 'Strength') st.strengths += 1;
+        else if (note.type === 'Suggestion') st.suggestions += 1;
+      }
+    });
+
+    board.themes.forEach((theme, tIdx) => {
+      const themeCode = theme.code && theme.code !== 'None' ? theme.code : 'None';
+      if (themeCode !== 'None') {
+        const st = ensureStd(themeCode);
+        st.boardIds.add(session.sessionId);
+      }
+
+      themes.push({
+        id: `${session.sessionId}__theme_${tIdx}`,
+        sessionId: session.sessionId,
+        userId: session.userId,
+        title: theme.title,
+        heat: theme.heat,
+        difficulties: theme.difficulties,
+        complaints: theme.complaints,
+        strengths: theme.strengths,
+        suggestions: theme.suggestions,
+        painNotes: theme.painNotes,
+        code: themeCode,
+        roleCategory,
+        isPriority: board.priority.themeIndex === tIdx,
+        date: dateStr,
+        cause: theme.cause,
+        routine: board.routine,
+      });
+    });
+
+    const sortedBoardThemes = [...board.themes].sort((a, b) => b.painNotes - a.painNotes);
+    const priorityTheme =
+      board.priority.themeIndex !== null && board.themes[board.priority.themeIndex]
+        ? board.themes[board.priority.themeIndex]
+        : sortedBoardThemes[0];
+
+    boards.push({
+      sessionId: session.sessionId,
+      userId: session.userId,
+      displayName: session.profileSnapshot.displayName,
+      roleCategory,
+      position: session.profileSnapshot.position,
+      routine: board.routine,
+      date: dateStr,
+      noteCount: board.notes.length,
+      topTheme: priorityTheme ? priorityTheme.title : '—',
+      topThemeHeat: priorityTheme ? priorityTheme.heat : 'Mild',
+    });
+  }
+
+  themes.sort((a, b) => {
+    if (b.painNotes !== a.painNotes) return b.painNotes - a.painNotes;
+    return b.date.localeCompare(a.date);
+  });
+
+  boards.sort((a, b) => b.date.localeCompare(a.date));
+
+  const totalNonStepNotes =
+    nonStepCounts.Difficulty +
+    nonStepCounts.Complaint +
+    nonStepCounts.Strength +
+    nonStepCounts.Suggestion;
+
+  const notesByType: NotesByTypeStat[] = NON_STEP_NOTE_TYPES.map((type) => {
+    const count = nonStepCounts[type];
+    const percent = totalNonStepNotes > 0 ? Math.round((count / totalNonStepNotes) * 1000) / 10 : 0;
+    return { type, count, percent };
+  });
+
+  const byStandard: WallStandardRow[] = Array.from(standardMap.entries())
+    .map(([code, val]) => ({
+      code,
+      boards: val.boardIds.size,
+      difficulties: val.difficulties,
+      complaints: val.complaints,
+      strengths: val.strengths,
+      suggestions: val.suggestions,
+    }))
+    .sort((a, b) => {
+      const aPain = a.difficulties + a.complaints;
+      const bPain = b.difficulties + b.complaints;
+      if (bPain !== aPain) return bPain - aPain;
+      return a.code.localeCompare(b.code);
+    });
+
+  return {
+    staffInterviewed: distinctUsers.size,
+    boardsSaved: completed.length,
+    notesCollected,
+    painPoints,
+    improvementIdeas,
+    notesByType,
+    totalNonStepNotes,
+    themes,
+    byStandard,
+    complaintSources,
+    stickyNotes,
+    boards,
+  };
+}
