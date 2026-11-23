@@ -7,7 +7,7 @@ A Total Quality Management (TQM) Quality Circle check-in and Affinity Board (KJ 
 - **Frontend**: React 19 + TypeScript + Tailwind CSS v4 (`Plus Jakarta Sans` UI, `Patrick Hand` sticky notes).
 - **Authentication**: Firebase Authentication (Google Sign-In).
 - **Database**: Cloud Firestore (browser reads/writes user-owned records directly under `firestore.rules`; server never writes to Firestore and holds no service account key).
-- **Backend API**: Express server (`server/app.ts`) verifying Firebase ID tokens with `firebase-admin/auth`, reading Firestore via the caller's own ID token (`documents.get` and `runQuery`), and calling `@google/genai` with the 4-model fallback ladder (`gemini-3.6-flash` -> `gemini-3.1-flash-lite` -> `gemini-flash-latest` -> `gemini-3.7-flash`).
+- **Backend API**: Express server (`server/app.ts`) verifying Firebase ID tokens on the server with `jose` against Google's published Firebase signing keys (the method Firebase documents for hosts where the Admin SDK cannot run), reading Firestore via the caller's own ID token (`documents.get` and `runQuery`), and calling `@google/genai` with the 4-model fallback ladder (`gemini-3.6-flash` -> `gemini-3.1-flash-lite` -> `gemini-flash-latest` -> `gemini-3.7-flash`).
 - **Deterministic Math**: `shared/boardMath.ts` computes all note counts, theme heat levels, Circle Wall totals, and standard rollups.
 
 ---

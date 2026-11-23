@@ -1,12 +1,29 @@
-import { getApp, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
 import type { Request } from 'express';
 import { FIREBASE_PROJECT_ID } from './firebaseIds.js';
 import { getDocument } from './firestoreRest.js';
 
-function getAdminAuth() {
-  const app = getApps().length ? getApp() : initializeApp({ projectId: FIREBASE_PROJECT_ID });
-  return getAuth(app);
+// Firebase ID tokens are verified on the server with jose against Google's
+// published Firebase signing keys (the method Firebase documents for hosts where
+// the Admin SDK cannot run), loaded via cached dynamic import for CJS/ESM compatibility.
+const FIREBASE_JWKS_URL = new URL(
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'
+);
+const FIREBASE_ISSUER = `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`;
+const CLOCK_TOLERANCE_SECONDS = 60;
+
+type JoseModule = typeof import('jose');
+let josePromise: Promise<JoseModule> | null = null;
+let jwksResolver: ReturnType<JoseModule['createRemoteJWKSet']> | null = null;
+
+async function getJoseVerifier() {
+  if (!josePromise) {
+    josePromise = import('jose');
+  }
+  const jose = await josePromise;
+  if (!jwksResolver) {
+    jwksResolver = jose.createRemoteJWKSet(FIREBASE_JWKS_URL);
+  }
+  return { jwtVerify: jose.jwtVerify, jwks: jwksResolver };
 }
 
 export interface VerifiedCaller {
@@ -35,12 +52,41 @@ export async function verifyCaller(req: Request): Promise<VerifiedCaller> {
   }
 
   try {
-    const decoded = await getAdminAuth().verifyIdToken(idToken);
+    const { jwtVerify, jwks } = await getJoseVerifier();
+    const { payload } = await jwtVerify(idToken, jwks, {
+      algorithms: ['RS256'],
+      issuer: FIREBASE_ISSUER,
+      audience: FIREBASE_PROJECT_ID,
+      clockTolerance: CLOCK_TOLERANCE_SECONDS,
+    });
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (
+      typeof payload.exp !== 'number' ||
+      typeof payload.iat !== 'number' ||
+      payload.iat > nowSeconds + CLOCK_TOLERANCE_SECONDS ||
+      typeof payload.auth_time !== 'number' ||
+      payload.auth_time > nowSeconds + CLOCK_TOLERANCE_SECONDS
+    ) {
+      throw new Error('Invalid token timestamps.');
+    }
+
+    if (
+      typeof payload.sub !== 'string' ||
+      payload.sub.length === 0 ||
+      payload.sub.length > 128
+    ) {
+      throw new Error('Invalid token subject.');
+    }
+
     return {
-      uid: decoded.uid,
-      displayName: typeof decoded.name === 'string' && decoded.name.trim() ? decoded.name.trim() : 'Staff Member',
-      email: typeof decoded.email === 'string' ? decoded.email : '',
-      emailVerified: decoded.email_verified === true,
+      uid: payload.sub,
+      displayName:
+        typeof payload.name === 'string' && payload.name.trim()
+          ? payload.name.trim()
+          : 'Staff Member',
+      email: typeof payload.email === 'string' ? payload.email : '',
+      emailVerified: payload.email_verified === true,
       idToken,
     };
   } catch {
