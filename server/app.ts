@@ -553,9 +553,9 @@ app.post('/api/circle/board', async (req: Request, res: Response) => {
       const type = NOTE_TYPES.includes(n.type as BoardNote['type'])
         ? (n.type as BoardNote['type'])
         : 'Difficulty';
-      const noteText = clampWords(String(n.text ?? ''), 240);
+      const noteText = clampWords(String(n.text ?? ''), 260);
       if (!noteText) continue;
-      const quote = clampWords(String(n.quote ?? ''), 300);
+      const quote = clampWords(String(n.quote ?? ''), 320);
       let source: BoardNote['source'] = '';
       if (type === 'Complaint') {
         const rawSrc = String(n.source ?? '').trim();
@@ -569,6 +569,8 @@ app.post('/api/circle/board', async (req: Request, res: Response) => {
         quote,
         source,
         code: sanitizeCode(n.code, validCodes),
+        editedByEmployee: false,
+        addedByEmployee: false,
       });
     }
 
@@ -603,7 +605,7 @@ app.post('/api/circle/board', async (req: Request, res: Response) => {
       cleanedThemes.push({
         title,
         noteIndexes,
-        cause: clampWords(String(t.cause ?? ''), 250),
+        cause: clampWords(String(t.cause ?? ''), 260),
         code: sanitizeCode(t.code, validCodes),
       });
     }
@@ -645,7 +647,7 @@ app.post('/api/circle/board', async (req: Request, res: Response) => {
     for (const item of rawImps) {
       if (!item || typeof item !== 'object') continue;
       const imp = item as Record<string, unknown>;
-      const idea = clampWords(String(imp.idea ?? ''), 300);
+      const idea = clampWords(String(imp.idea ?? ''), 320);
       if (!idea) continue;
       const origin = imp.origin === 'Employee' ? 'Employee' : 'Facilitator';
       const impThemeIndex =
@@ -659,7 +661,7 @@ app.post('/api/circle/board', async (req: Request, res: Response) => {
         idea,
         origin,
         themeIndex: impThemeIndex,
-        owner: clampWords(String(imp.owner ?? 'Staff'), 100) || 'Staff',
+        owner: clampWords(String(imp.owner ?? 'Staff'), 140) || 'Staff',
         firstStep: clampWords(String(imp.firstStep ?? ''), 240),
         code: sanitizeCode(imp.code, validCodes),
       });
@@ -668,7 +670,7 @@ app.post('/api/circle/board', async (req: Request, res: Response) => {
     const assembled: Omit<AffinityBoard, 'stats'> = {
       routine: clampWords(String(parsed.routine ?? 'Daily work routine'), 140) || 'Daily work routine',
       routineCode: sanitizeCode(parsed.routineCode, validCodes),
-      summary: clampWords(String(parsed.summary ?? ''), 800),
+      summary: clampWords(String(parsed.summary ?? ''), 900),
       notes,
       themes: cleanedThemes.map((t) => ({
         ...t,
@@ -682,10 +684,11 @@ app.post('/api/circle/board', async (req: Request, res: Response) => {
       priority: {
         themeIndex,
         reason: clampWords(String(rawPriority.reason ?? ''), 300),
-        signOfSuccess: clampWords(String(rawPriority.signOfSuccess ?? ''), 250),
+        signOfSuccess: clampWords(String(rawPriority.signOfSuccess ?? ''), 320),
       },
       improvements,
       modelUsed,
+      employeeEdited: false,
     };
 
     const board = recomputeBoardMetrics(assembled);

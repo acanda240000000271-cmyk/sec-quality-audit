@@ -28,9 +28,11 @@ baseline is empty, talk in general terms and cite no codes.
 The six topics (the app already asked topic 1):
 1 Routine: one routine that takes much of the week, and its main steps.
 2 Difficulties: what makes this routine hard, slow or tiring (time, equipment, materials,
-  learners' needs, paperwork), and how often that happens.
-3 Complaints: what learners, parents, colleagues or the office complain about in this routine,
-  and what the employee themself complains about; who complains and how often.
+  learners' needs, paperwork), how often that happens, and which other tasks get delayed
+  because of it.
+3 Complaints: what other people (learners, parents, colleagues, the office) say or complain
+  about in this routine, who and how often. Do not ask again about the difficulties already
+  given in topic 2.
 4 What works: practices, tools or habits that already help the routine go well.
 5 Suggestions: what the employee would change to make the routine better; accept several ideas.
 6 Priority: which one problem from topics 2 and 3 should be fixed first, why the employee
@@ -73,30 +75,47 @@ so in the summary and return empty lists.
 <transcript>{transcript}</transcript>
 Check-in date: {sessionDate}
 
+Before you answer, read the employee's answers sentence by sentence and make sure every
+separate point has its own note: each routine step, each difficulty and its reasons or
+conditions (for example "not all classrooms have reliable devices or internet"), each other
+task that gets delayed, each complaint, each strength (including help from co-workers) and
+each suggestion.
+
 Return JSON with:
 - routine: the routine discussed (max 10 words)
 - routineCode: the exact baseline code that best fits the routine, or "None"
-- summary: max 90 words; call the employee by first name or "the employee", never he, she, him
-  or her
-- notes: one note for EVERY separate point the employee made, even small ones, each with:
-  type ("Step", "Difficulty", "Complaint", "Strength" or "Suggestion"); text (the point in
-  plain words, max 15 words); quote (the employee's own words copied exactly, max 25 words);
-  source (for a Complaint, who complains: "Learners", "Parents", "Colleagues", "Office", "Self"
-  or "Other"; "" for every other type); code (exact baseline code or "None")
-- themes: 2 to 5 groups of related notes, each with: title (a plain theme name, max 6 words);
-  noteIndexes (positions in notes, starting at 0; every Difficulty, Complaint, Strength and
-  Suggestion note is in exactly one theme; Step notes are in none); cause (why the problems in
-  this theme happen, in the employee's terms, max 20 words, or ""); code (exact baseline code
-  or "None")
+- summary: max 90 words, written to the employee as "you" in a warm, plain tone (for example
+  "You check and record grades for four subjects..."); never "the employee", he, she, him or
+  her
+- notes: one note per separate point, each with: type ("Step", "Difficulty", "Complaint",
+  "Strength" or "Suggestion"); text (the point in plain words, max 18 words, keeping every
+  number, time, amount and frequency the employee gave, for example "Checkout takes about 2-3
+  minutes per student"); quote (the employee's own words copied exactly, max 25 words);
+  source (for a Complaint, who complains: "Learners", "Parents", "Colleagues", "Office",
+  "Self" or "Other"; "" for every other type; a complaint from two groups becomes two notes,
+  one per source); code (exact baseline code or "None"). Steps: one Step note per separate
+  step, in the order the employee gave them.
+- themes: 2 to 5 groups of related notes, each with: title (max 6 words, describing the
+  situation neutrally and never blaming anyone, for example "Grade follow-ups from parents
+  and office", not "Delayed Communication and Accountability"); noteIndexes (positions in
+  notes, starting at 0; every Difficulty, Complaint, Strength and Suggestion note is in
+  exactly one theme; Step notes are in none; put each Suggestion in the theme of the problem
+  it would solve, and never make a theme of only Suggestions or only Strengths when a
+  matching problem theme exists); cause (why the problems in this theme happen, in the
+  employee's terms, max 20 words, or ""); code (exact baseline code or "None")
 - priority: {themeIndex (the theme holding the problem the employee wants fixed first, or
   null), reason (the employee's reason, max 25 words, or ""), signOfSuccess (the sign or
-  number the employee said would show improvement, or "")}
+  number the employee said would show improvement, stating the current value and the target
+  when the employee gave both, for example "Checkout time from about 2-3 minutes to under 1
+  minute", or "")}
 - improvements: 1 to 4 process improvement suggestions, each with: idea (a small, concrete
   change, max 25 words); origin ("Employee" for the employee's own idea, "Facilitator" for
-  your suggestion based on the baseline standards and the employee's problems); themeIndex;
-  owner (a role, never a person's name); firstStep (max 15 words); code (exact baseline code or
-  "None"). List every employee idea first; add at most 2 Facilitator ideas, only for themes
-  that hold Difficulty or Complaint notes.
+  your suggestion based on the baseline standards and the employee's problems); themeIndex
+  (the theme of the problem it solves); owner (every role that must act, never a person's
+  name; when the change needs a purchase, approval, budget or schedule the employee cannot
+  decide alone, add that role, for example "School Librarian with Admin / ICT"); firstStep
+  (max 15 words); code (exact baseline code or "None"). List every employee idea first; add
+  at most 2 Facilitator ideas, only for themes that hold Difficulty or Complaint notes.
 Every field must be present: use null, "" or [] when there is nothing. Do not count notes or
 rank themes by size; the app does that.`;
 

@@ -1,5 +1,35 @@
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
+import { type InteractionMessage, TOPICS } from '../../shared/types';
+
+export function isClosingFacilitatorMessage(
+  messages: Pick<InteractionMessage, 'role'>[],
+  index: number
+): boolean {
+  const target = messages[index];
+  if (!target || target.role !== 'assistant') return false;
+  let userCountBefore = 0;
+  for (let i = 0; i < index; i += 1) {
+    if (messages[i].role === 'user') userCountBefore += 1;
+  }
+  return userCountBefore >= 6;
+}
+
+export function getFacilitatorMessageLabel(
+  messages: Pick<InteractionMessage, 'role' | 'topicNumber'>[],
+  index: number,
+  options?: { includeTopicName?: boolean; prefix?: string }
+): string {
+  if (isClosingFacilitatorMessage(messages, index)) {
+    return options?.prefix ? `${options.prefix}Closing` : 'Closing';
+  }
+  const msg = messages[index];
+  const topicNum = msg?.topicNumber ?? 1;
+  const base = options?.includeTopicName
+    ? `Topic ${topicNum} · ${TOPICS[topicNum - 1]?.name ?? 'Routine'}`
+    : `Topic ${topicNum}`;
+  return options?.prefix ? `${options.prefix}${base}` : base;
+}
 
 export function toTitleCaseFirstName(displayName: string | null | undefined): string {
   const clean = (displayName ?? '').trim();

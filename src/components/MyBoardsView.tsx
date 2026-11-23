@@ -13,6 +13,7 @@ import { db, toIsoString } from '../lib/firebase';
 import {
   formatDateShort,
   formatTimeShort,
+  getFacilitatorMessageLabel,
   renderSafeMarkdown,
 } from '../lib/formatters';
 import { BoardView } from './BoardView';
@@ -133,6 +134,7 @@ export function MyBoardsView({
             board={selectedSession.board}
             profileSnapshot={selectedSession.profileSnapshot}
             sessionDate={selectedSession.completedAt || selectedSession.createdAt}
+            viewerRole="employee"
           />
         ) : (
           <div className="sec-card p-5 md:p-6 space-y-4">
@@ -181,7 +183,9 @@ export function MyBoardsView({
                       <span>
                         {m.role === 'user'
                           ? 'You'
-                          : `Facilitator · Topic ${m.topicNumber}`}
+                          : getFacilitatorMessageLabel(transcript, idx, {
+                              prefix: 'Facilitator · ',
+                            })}
                       </span>
                       <span className="tabular-nums">{formatTimeShort(m.timestamp)}</span>
                     </div>

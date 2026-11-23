@@ -6,6 +6,7 @@ import {
   Lightbulb,
   ListOrdered,
   MessageSquareWarning,
+  Pencil,
   Thermometer,
   X,
 } from 'lucide-react';
@@ -107,15 +108,49 @@ export function HeatChip({ heat }: { heat: HeatLevel }) {
   );
 }
 
+export function NoteOriginTag({
+  addedByEmployee,
+  editedByEmployee,
+  viewerRole = 'employee',
+}: {
+  addedByEmployee?: boolean;
+  editedByEmployee?: boolean;
+  viewerRole?: 'employee' | 'admin';
+}) {
+  if (!addedByEmployee && !editedByEmployee) return null;
+  const actor = viewerRole === 'admin' ? 'employee' : 'you';
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-[11px] font-semibold tracking-tight opacity-85">
+      {addedByEmployee ? (
+        <span className="px-1.5 py-0.5 rounded bg-white/70 border border-black/10">
+          Added by {actor}
+        </span>
+      ) : null}
+      {editedByEmployee ? (
+        <span className="px-1.5 py-0.5 rounded bg-white/70 border border-black/10">
+          Edited by {actor}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 export function StickyNoteCard({
   note,
   tiltIndex = 0,
   subtitle,
+  viewerRole = 'employee',
+  onEdit,
   onRemove,
 }: {
-  note: Pick<BoardNote, 'type' | 'text' | 'quote' | 'source' | 'code'>;
+  note: Pick<
+    BoardNote,
+    'type' | 'text' | 'quote' | 'source' | 'code' | 'editedByEmployee' | 'addedByEmployee'
+  >;
   tiltIndex?: number;
   subtitle?: string;
+  viewerRole?: 'employee' | 'admin';
+  onEdit?: () => void;
   onRemove?: () => void;
 }) {
   const [showQuote, setShowQuote] = useState(false);
@@ -129,7 +164,9 @@ export function StickyNoteCard({
 
   return (
     <div
-      className={`sticky-note-card ${tiltClass} rounded-lg p-3.5 relative cursor-pointer select-text`}
+      className={`sticky-note-card ${tiltClass} rounded-lg p-3.5 relative ${
+        note.quote ? 'cursor-pointer' : ''
+      } select-text`}
       style={{
         backgroundColor: meta.bg,
         border: `1px solid ${meta.border}`,
@@ -141,7 +178,7 @@ export function StickyNoteCard({
       title={note.quote ? `Quote: "${note.quote}"` : undefined}
     >
       <div className="flex items-start justify-between gap-2 mb-1.5">
-        <div className="flex items-center gap-1.5 text-xs font-semibold">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
           <NoteTypeIcon type={note.type} className="w-3.5 h-3.5 shrink-0" />
           <span>{meta.label}</span>
           {note.type === 'Complaint' && note.source ? (
@@ -151,22 +188,51 @@ export function StickyNoteCard({
             <span className="opacity-80 font-mono">· {note.code}</span>
           ) : null}
         </div>
-        {onRemove ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            aria-label="Remove note"
-            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black/10 transition-colors shrink-0"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+        {onEdit || onRemove ? (
+          <div className="flex items-center gap-0.5 shrink-0">
+            {onEdit ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                aria-label="Edit note"
+                title="Edit note"
+                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            ) : null}
+            {onRemove ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                aria-label="Remove note"
+                title="Remove note"
+                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
       <p className="font-sticky text-[18px] leading-snug">{note.text}</p>
+
+      {note.addedByEmployee || note.editedByEmployee ? (
+        <div className="mt-2">
+          <NoteOriginTag
+            addedByEmployee={note.addedByEmployee}
+            editedByEmployee={note.editedByEmployee}
+            viewerRole={viewerRole}
+          />
+        </div>
+      ) : null}
 
       {subtitle ? (
         <p className="mt-1.5 text-xs font-medium opacity-75">{subtitle}</p>

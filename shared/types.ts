@@ -82,6 +82,8 @@ export interface BoardNote {
   quote: string;
   source: ComplaintSource;
   code: string;
+  editedByEmployee?: boolean;
+  addedByEmployee?: boolean;
 }
 
 export interface BoardTheme {
@@ -131,6 +133,7 @@ export interface AffinityBoard {
   improvements: BoardImprovement[];
   stats: BoardStats;
   modelUsed?: string;
+  employeeEdited?: boolean;
 }
 
 export interface CircleSession {

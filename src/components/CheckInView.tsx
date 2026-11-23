@@ -18,7 +18,14 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import { removeNoteFromBoard } from '../../shared/boardMath';
+import {
+  addNoteToBoard,
+  editImprovementInBoard,
+  editNoteInBoard,
+  finalizeBoardForSave,
+  removeNoteFromBoard,
+  renameThemeInBoard,
+} from '../../shared/boardMath';
 import {
   type AffinityBoard,
   type CircleSession,
@@ -33,7 +40,11 @@ import {
   toIsoString,
   writeWithTimeout,
 } from '../lib/firebase';
-import { formatTimeShort, renderSafeMarkdown } from '../lib/formatters';
+import {
+  formatTimeShort,
+  getFacilitatorMessageLabel,
+  renderSafeMarkdown,
+} from '../lib/formatters';
 import { BoardView } from './BoardView';
 import { ConfirmDialog } from './NoteVisuals';
 
@@ -75,6 +86,7 @@ export function CheckInView({
 
   const [showBuildConfirm, setShowBuildConfirm] = useState(false);
   const [buildingBoard, setBuildingBoard] = useState(false);
+  const [buildElapsedSeconds, setBuildElapsedSeconds] = useState(0);
   const [boardError, setBoardError] = useState<string | null>(null);
   const [previewBoard, setPreviewBoard] = useState<AffinityBoard | null>(null);
   const [viewMode, setViewMode] = useState<'chat' | 'preview'>('chat');
@@ -160,6 +172,18 @@ export function CheckInView({
     }, 1000);
     return () => clearInterval(id);
   }, [waitingReply]);
+
+  useEffect(() => {
+    if (!buildingBoard) {
+      setBuildElapsedSeconds(0);
+      return;
+    }
+    setBuildElapsedSeconds(1);
+    const id = setInterval(() => {
+      setBuildElapsedSeconds((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [buildingBoard]);
 
   if (!profile) {
     return (
@@ -380,7 +404,7 @@ export function CheckInView({
     setSavingBoard(true);
     setBoardError(null);
 
-    const sanitizedBoard = stripUndefined(previewBoard);
+    const sanitizedBoard = stripUndefined(finalizeBoardForSave(previewBoard));
 
     try {
       await writeWithTimeout(() =>
@@ -434,10 +458,28 @@ export function CheckInView({
           profileSnapshot={activeSession.profileSnapshot}
           sessionDate={activeSession.createdAt}
           isPreview={true}
+          viewerRole="employee"
           rebuildCount={localRebuildCount}
           rebuilding={buildingBoard}
+          buildElapsedSeconds={buildElapsedSeconds}
           saving={savingBoard}
-          onRemoveNote={(idx) => setPreviewBoard((prev) => (prev ? removeNoteFromBoard(prev, idx) : null))}
+          onRemoveNote={(idx) =>
+            setPreviewBoard((prev) => (prev ? removeNoteFromBoard(prev, idx) : null))
+          }
+          onEditNote={(idx, updates) =>
+            setPreviewBoard((prev) => (prev ? editNoteInBoard(prev, idx, updates) : null))
+          }
+          onAddNote={(input) =>
+            setPreviewBoard((prev) => (prev ? addNoteToBoard(prev, input) : null))
+          }
+          onRenameTheme={(tIdx, newTitle) =>
+            setPreviewBoard((prev) => (prev ? renameThemeInBoard(prev, tIdx, newTitle) : null))
+          }
+          onEditImprovement={(impIdx, updates) =>
+            setPreviewBoard((prev) =>
+              prev ? editImprovementInBoard(prev, impIdx, updates) : null
+            )
+          }
           onRebuild={() => void handleBuildBoard(true)}
           onSaveBoard={() => void handleSavePreviewBoard()}
           onBackToChat={() => setViewMode('chat')}
@@ -451,7 +493,7 @@ export function CheckInView({
       <ConfirmDialog
         open={showBuildConfirm}
         title="Build your Affinity Board?"
-        message="The Facilitator will group all the points you shared so far into themes and improvement ideas. You can review, remove notes, or rebuild before saving."
+        message="The Facilitator will group all the points you shared so far into themes and improvement ideas. You can edit, add, or remove notes, or rebuild before saving."
         confirmLabel="Build My Affinity Board"
         onConfirm={() => void handleBuildBoard(false)}
         onCancel={() => setShowBuildConfirm(false)}
@@ -497,7 +539,6 @@ export function CheckInView({
 
             {messages.map((msg, idx) => {
               const isUser = msg.role === 'user';
-              const topicLabel = TOPICS[msg.topicNumber - 1]?.name ?? 'Routine';
               return (
                 <div
                   key={msg.id || `${msg.clientMessageId}-${idx}`}
@@ -524,7 +565,9 @@ export function CheckInView({
                         <span>
                           {isUser
                             ? 'You'
-                            : `Topic ${msg.topicNumber} · ${topicLabel}`}
+                            : getFacilitatorMessageLabel(messages, idx, {
+                                includeTopicName: true,
+                              })}
                         </span>
                         <span className="tabular-nums">
                           {formatTimeShort(msg.timestamp)}
@@ -638,8 +681,8 @@ export function CheckInView({
         </div>
 
         {/* Right: Sticky Cork Board "Your notes so far" */}
-        <div className="sec-card p-4 md:p-5 flex flex-col justify-between lg:h-full lg:overflow-y-auto">
-          <div className="space-y-4">
+        <div className="sec-card p-4 md:p-5 flex flex-col lg:h-full lg:overflow-hidden">
+          <div className="shrink-0 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-base font-bold text-slate-800">
                 Your notes so far
@@ -681,46 +724,46 @@ export function CheckInView({
                 );
               })}
             </div>
+          </div>
 
-            {/* Mini cork board */}
-            <div className="cork-board rounded-xl p-3.5 min-h-[180px]">
-              {userAnswers.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-center py-8 px-3">
-                  <p className="text-xs text-slate-700 font-medium">
-                    As you answer each question, a sticky note summary will be pinned here.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2.5">
-                  {userAnswers.slice(0, 6).map((ans, i) => {
-                    const topicName = TOPICS[i]?.name ?? `Topic ${i + 1}`;
-                    const snippet =
-                      ans.content.length > 80
-                        ? `${ans.content.slice(0, 80).trim()}…`
-                        : ans.content;
-                    return (
-                      <div
-                        key={ans.id || i}
-                        className={`sticky-note-card ${
-                          i % 2 === 0 ? 'sticky-tilt-left' : 'sticky-tilt-right'
-                        } rounded-lg p-2.5 bg-[#FEF3C7] border border-[#F59E0B] text-slate-800`}
-                      >
-                        <div className="text-[11px] font-bold text-amber-900">
-                          {i + 1}. {topicName}
-                        </div>
-                        <p className="font-sticky text-[16px] leading-snug mt-0.5">
-                          {snippet}
-                        </p>
+          {/* Mini cork board */}
+          <div className="cork-board rounded-xl p-3.5 mt-3 min-h-[180px] lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
+            {userAnswers.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-center py-8 px-3">
+                <p className="text-xs text-slate-700 font-medium">
+                  As you answer each question, a sticky note summary will be pinned here.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2.5">
+                {userAnswers.slice(0, 6).map((ans, i) => {
+                  const topicName = TOPICS[i]?.name ?? `Topic ${i + 1}`;
+                  const snippet =
+                    ans.content.length > 80
+                      ? `${ans.content.slice(0, 80).trim()}…`
+                      : ans.content;
+                  return (
+                    <div
+                      key={ans.id || i}
+                      className={`sticky-note-card ${
+                        i % 2 === 0 ? 'sticky-tilt-left' : 'sticky-tilt-right'
+                      } rounded-lg p-2.5 bg-[#FEF3C7] border border-[#F59E0B] text-slate-800`}
+                    >
+                      <div className="text-[11px] font-bold text-amber-900">
+                        {i + 1}. {topicName}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                      <p className="font-sticky text-[16px] leading-snug mt-0.5">
+                        {snippet}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Build My Affinity Board button */}
-          <div className="mt-4 pt-4 border-t border-[#EADFCB] space-y-2.5">
+          <div className="shrink-0 mt-3 pt-3 border-t border-[#EADFCB] space-y-2.5">
             {boardError ? (
               <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800">
                 {boardError}
@@ -731,16 +774,18 @@ export function CheckInView({
               type="button"
               disabled={!canBuildBoard || buildingBoard}
               onClick={() => setShowBuildConfirm(true)}
-              className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+              className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm text-center whitespace-normal transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed tabular-nums ${
                 isClosed
                   ? 'bg-[#F59E0B] text-[#1E293B] hover:bg-[#D97706] ring-2 ring-[#F59E0B]/40'
                   : 'bg-[#F59E0B] text-[#1E293B] hover:bg-[#D97706]'
               }`}
             >
-              <Sparkles className="w-4 h-4" />
-              {buildingBoard
-                ? 'Building your Affinity Board…'
-                : 'Build My Affinity Board'}
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>
+                {buildingBoard
+                  ? `Building your Affinity Board… ${buildElapsedSeconds}s (usually 20-40 seconds)`
+                  : 'Build My Affinity Board'}
+              </span>
             </button>
 
             <p className="text-[11px] text-slate-500 text-center">

@@ -21,6 +21,7 @@ import { db, toIsoString } from '../lib/firebase';
 import {
   formatDateShort,
   formatTimeShort,
+  getFacilitatorMessageLabel,
   renderSafeMarkdown,
   toTitleCaseFirstName,
 } from '../lib/formatters';
@@ -224,6 +225,7 @@ export function AdminCircleWallView({
                   board={inspectedSession.board}
                   profileSnapshot={inspectedSession.profileSnapshot}
                   sessionDate={inspectedSession.completedAt || inspectedSession.createdAt}
+                  viewerRole="admin"
                 />
               ) : loadingMessages ? (
                 <p className="text-center text-sm text-slate-500 py-8">
@@ -244,7 +246,9 @@ export function AdminCircleWallView({
                         <span>
                           {m.role === 'user'
                             ? `${toTitleCaseFirstName(inspectedSession.profileSnapshot.displayName)}`
-                            : `Facilitator · Topic ${m.topicNumber}`}
+                            : getFacilitatorMessageLabel(inspectedMessages, idx, {
+                                prefix: 'Facilitator · ',
+                              })}
                         </span>
                         <span className="tabular-nums">{formatTimeShort(m.timestamp)}</span>
                       </div>
@@ -512,6 +516,7 @@ export function AdminCircleWallView({
                 note={n}
                 tiltIndex={idx}
                 subtitle={n.roleCategory}
+                viewerRole="admin"
               />
             ))}
           </div>

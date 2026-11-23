@@ -35,6 +35,7 @@ import {
 import {
   formatDateShort,
   formatDateTime,
+  getFacilitatorMessageLabel,
   renderSafeMarkdown,
 } from '../lib/formatters';
 import { ConfirmDialog } from './NoteVisuals';
@@ -263,12 +264,16 @@ export function AdminReportsView({
         if (msgs.length === 0) {
           sections.push('_No messages recorded._');
         } else {
-          for (const m of msgs) {
+          msgs.forEach((m, mIdx) => {
             const speaker = m.role === 'user' ? p.displayName : 'Facilitator';
+            const turnLabel =
+              m.role === 'user'
+                ? `Topic ${m.topicNumber}`
+                : getFacilitatorMessageLabel(msgs, mIdx);
             sections.push(
-              `- **[${formatDateTime(m.timestamp)}] ${speaker} (Topic ${m.topicNumber}):** ${m.content}`
+              `- **[${formatDateTime(m.timestamp)}] ${speaker} (${turnLabel}):** ${m.content}`
             );
-          }
+          });
         }
         sections.push('');
 
@@ -277,11 +282,18 @@ export function AdminReportsView({
           sections.push(`### Affinity Board`);
           sections.push(`- **Routine:** ${b.routine} (${b.routineCode})`);
           sections.push(`- **Summary:** ${b.summary}`);
+          if (b.employeeEdited) {
+            sections.push(`- **Edited by employee before saving:** Yes`);
+          }
           sections.push('');
           sections.push(`#### Notes (${b.notes.length})`);
           b.notes.forEach((n, nIdx) => {
+            const tags: string[] = [];
+            if (n.addedByEmployee) tags.push('Added by employee');
+            if (n.editedByEmployee) tags.push('Edited by employee');
+            const tagSuffix = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
             sections.push(
-              `${nIdx + 1}. **[${n.type}]** ${n.text} _(Quote: "${n.quote}"${n.source ? `, Source: ${n.source}` : ''}${n.code && n.code !== 'None' ? `, Code: ${n.code}` : ''})_`
+              `${nIdx + 1}. **[${n.type}]** ${n.text}${tagSuffix} _(Quote: "${n.quote}"${n.source ? `, Source: ${n.source}` : ''}${n.code && n.code !== 'None' ? `, Code: ${n.code}` : ''})_`
             );
           });
           sections.push('');

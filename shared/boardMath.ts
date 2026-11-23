@@ -121,6 +121,7 @@ export function recomputeBoardMetrics(
       complaintSources,
     },
     ...(board.modelUsed ? { modelUsed: board.modelUsed } : {}),
+    ...(board.employeeEdited !== undefined ? { employeeEdited: board.employeeEdited } : {}),
   };
 }
 
@@ -143,7 +144,215 @@ export function removeNoteFromBoard(
     ...board,
     notes: nextNotes,
     themes: nextThemes,
+    employeeEdited: true,
   });
+}
+
+export function editNoteInBoard(
+  board: AffinityBoard,
+  noteIndex: number,
+  updates: {
+    text: string;
+    type: NoteType;
+    targetThemeIndex: number | null;
+    source?: ComplaintSource;
+  }
+): AffinityBoard {
+  if (noteIndex < 0 || noteIndex >= board.notes.length) {
+    return board;
+  }
+  const existing = board.notes[noteIndex];
+  const nextText = updates.text.trim().slice(0, 200);
+  if (!nextText) return board;
+
+  const nextType = updates.type;
+  const nextSource: ComplaintSource =
+    nextType === 'Complaint'
+      ? updates.source && COMPLAINT_SOURCES.includes(updates.source as (typeof COMPLAINT_SOURCES)[number])
+        ? updates.source
+        : existing.source && COMPLAINT_SOURCES.includes(existing.source as (typeof COMPLAINT_SOURCES)[number])
+        ? existing.source
+        : 'Other'
+      : '';
+
+  const nextNotes = board.notes.map((n, idx) =>
+    idx === noteIndex
+      ? {
+          ...n,
+          type: nextType,
+          text: nextText,
+          source: nextSource,
+          editedByEmployee: true,
+          addedByEmployee: Boolean(n.addedByEmployee),
+        }
+      : n
+  );
+
+  // Remove noteIndex from all themes first
+  const nextThemes = board.themes.map((t) => ({
+    ...t,
+    noteIndexes: t.noteIndexes.filter((idx) => idx !== noteIndex),
+  }));
+
+  if (nextType !== 'Step') {
+    let destIdx =
+      updates.targetThemeIndex !== null &&
+      updates.targetThemeIndex >= 0 &&
+      updates.targetThemeIndex < nextThemes.length
+        ? updates.targetThemeIndex
+        : 0;
+    if (nextThemes.length === 0) {
+      nextThemes.push({
+        title: 'Other notes',
+        noteIndexes: [noteIndex],
+        cause: '',
+        code: 'None',
+        difficulties: 0,
+        complaints: 0,
+        strengths: 0,
+        suggestions: 0,
+        painNotes: 0,
+        heat: 'Mild',
+      });
+    } else {
+      nextThemes[destIdx] = {
+        ...nextThemes[destIdx],
+        noteIndexes: [...nextThemes[destIdx].noteIndexes, noteIndex],
+      };
+    }
+  }
+
+  return recomputeBoardMetrics({
+    ...board,
+    notes: nextNotes,
+    themes: nextThemes,
+    employeeEdited: true,
+  });
+}
+
+export function addNoteToBoard(
+  board: AffinityBoard,
+  input: {
+    text: string;
+    type: NoteType;
+    targetThemeIndex: number | null;
+    source?: ComplaintSource;
+  }
+): AffinityBoard {
+  const cleanText = input.text.trim().slice(0, 200);
+  if (!cleanText) return board;
+
+  const nextSource: ComplaintSource =
+    input.type === 'Complaint'
+      ? input.source && COMPLAINT_SOURCES.includes(input.source as (typeof COMPLAINT_SOURCES)[number])
+        ? input.source
+        : 'Other'
+      : '';
+
+  const newIndex = board.notes.length;
+  const newNote: BoardNote = {
+    type: input.type,
+    text: cleanText,
+    quote: '',
+    source: nextSource,
+    code: 'None',
+    editedByEmployee: false,
+    addedByEmployee: true,
+  };
+
+  const nextNotes = [...board.notes, newNote];
+  const nextThemes = board.themes.map((t) => ({ ...t, noteIndexes: [...t.noteIndexes] }));
+
+  if (input.type !== 'Step') {
+    const destIdx =
+      input.targetThemeIndex !== null &&
+      input.targetThemeIndex >= 0 &&
+      input.targetThemeIndex < nextThemes.length
+        ? input.targetThemeIndex
+        : 0;
+    if (nextThemes.length === 0) {
+      nextThemes.push({
+        title: 'Other notes',
+        noteIndexes: [newIndex],
+        cause: '',
+        code: 'None',
+        difficulties: 0,
+        complaints: 0,
+        strengths: 0,
+        suggestions: 0,
+        painNotes: 0,
+        heat: 'Mild',
+      });
+    } else {
+      nextThemes[destIdx].noteIndexes.push(newIndex);
+    }
+  }
+
+  return recomputeBoardMetrics({
+    ...board,
+    notes: nextNotes,
+    themes: nextThemes,
+    employeeEdited: true,
+  });
+}
+
+export function renameThemeInBoard(
+  board: AffinityBoard,
+  themeIndex: number,
+  newTitle: string
+): AffinityBoard {
+  const clean = newTitle.trim().slice(0, 60);
+  if (!clean || themeIndex < 0 || themeIndex >= board.themes.length) {
+    return board;
+  }
+  const nextThemes = board.themes.map((t, idx) =>
+    idx === themeIndex ? { ...t, title: clean } : t
+  );
+  return recomputeBoardMetrics({
+    ...board,
+    themes: nextThemes,
+    employeeEdited: true,
+  });
+}
+
+export function editImprovementInBoard(
+  board: AffinityBoard,
+  improvementIndex: number,
+  updates: { owner: string; firstStep: string }
+): AffinityBoard {
+  if (improvementIndex < 0 || improvementIndex >= board.improvements.length) {
+    return board;
+  }
+  const cleanOwner = updates.owner.trim().slice(0, 140) || 'Staff';
+  const cleanFirstStep = updates.firstStep.trim().slice(0, 240);
+
+  const nextImprovements = board.improvements.map((imp, idx) =>
+    idx === improvementIndex
+      ? { ...imp, owner: cleanOwner, firstStep: cleanFirstStep }
+      : imp
+  );
+  return recomputeBoardMetrics({
+    ...board,
+    improvements: nextImprovements,
+    employeeEdited: true,
+  });
+}
+
+export function finalizeBoardForSave(board: AffinityBoard): AffinityBoard {
+  const normalizedNotes = board.notes.map((n) => ({
+    ...n,
+    editedByEmployee: Boolean(n.editedByEmployee),
+    addedByEmployee: Boolean(n.addedByEmployee),
+  }));
+  const recomputed = recomputeBoardMetrics({
+    ...board,
+    notes: normalizedNotes,
+    employeeEdited: Boolean(board.employeeEdited),
+  });
+  return {
+    ...recomputed,
+    employeeEdited: Boolean(board.employeeEdited),
+  };
 }
 
 export interface WallThemeRow {
@@ -183,6 +392,8 @@ export interface WallStickyNote {
   source: ComplaintSource;
   code: string;
   roleCategory: RoleCategory;
+  editedByEmployee?: boolean;
+  addedByEmployee?: boolean;
 }
 
 export interface WallBoardRow {
@@ -300,6 +511,8 @@ export function computeCircleWallMetrics(sessions: CircleSession[]): CircleWallM
           source: note.source || '',
           code: note.code || 'None',
           roleCategory,
+          ...(note.editedByEmployee !== undefined ? { editedByEmployee: note.editedByEmployee } : {}),
+          ...(note.addedByEmployee !== undefined ? { addedByEmployee: note.addedByEmployee } : {}),
         });
       }
       if (note.code && note.code !== 'None') {
